@@ -1,0 +1,73 @@
+---
+title: "pml_Course_Project"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r readData}
+setwd("~/Google Drive/Coursera/PracticalMachineLearning/Project")
+library(parallel)
+library(doParallel)
+library(caret)
+library(randomForest)
+cluster <- makeCluster(detectCores() - 1)
+registerDoParallel(cluster)
+training <- read.csv("pml-training.csv")
+testing <- read.csv("pml-testing.csv")
+```
+
+Subset the two datasets, removing any variables with any NaN or inifinite entries.
+```{r}
+badTr <- apply(training, 2, function(x) any(is.na(x) | is.infinite(x)))
+badTe <- apply(testing, 2, function(x) any(is.na(x) | is.infinite(x)))
+trainSet <- training[!badTr]
+testSet <- testing[!badTe]
+```
+
+By looking at the data, it appears as if all variables of type factor do not add anything meaningful to our upcoming model construction. These factors are, for example, names of participants and error terms on the measured quantities. 
+
+Finally, we'll remove the first three rows, as they also do not convey anything meaningful (study times). As the last step, we separate our exercise type variable (y) from the remaining variables, making sure that the test data variables match the training data variables. 
+```{r}
+y <- trainSet[,93]
+isFac <- sapply(trainSet, function(x) is.factor(x))
+trainSet <- trainSet[!isFac]
+x <- trainSet[,c(-1,-2,-3)]
+xTest <- testSet[names(testSet) %in% names(x)]
+```
+
+##Set the training features
+
+Here we tell our model that we will use cross-validation three times, while allowing parallel computations to save time. Normally, cross-validation is performed closer to 10 times, but with the number of variables we have to build our model on, it should not take that many to get good accuracy. (Indeed this is the case, as the model results below show). 
+```{r trainControl}
+fitControl <- trainControl(method = "cv", number = 3, allowParallel = TRUE)
+```
+
+##Train the Model
+
+We will use the random forest method on x and y as calculated above. This is one of the best methods when doing classifications, as we are here. Set the tuning parameter mtry to 7 to save time. 
+```{r trainModel, cache=TRUE}
+fit <- train(x, y, method="rf", trControl=fitControl, tuneGrid=data.frame(mtry=7))
+fit
+fit$resample
+confusionMatrix.train(fit)
+varImpPlot(fit$finalModel, main="Variable Importance Plot: Random Forest")
+stopCluster(cluster)
+registerDoSEQ()
+```
+
+##Get out-of-sample error
+```{r OOB}
+fit$finalModel
+```
+
+The out-of-sample (OOB) error rate is shown above. 
+
+##Make predictions on the test dataset
+```{r testData}
+predTest <- predict(fit, xTest)
+```
+
+The test predictions are `r predTest`.
